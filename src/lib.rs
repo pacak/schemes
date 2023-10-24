@@ -59,19 +59,16 @@ mod v1 {
 
     #[test]
     fn make_works() {
-        let list = make_sample(10usize);
-
+        let list = make_sample(9usize);
         assert_eq!(list.sum(), 45);
         assert_eq!(list.prod(), 362880);
     }
 
-    /*
     #[test]
     fn also_fails() {
         let list = make_sample(100000usize);
         assert_eq!(list.sum(), 45);
     }
-    */
 } // }}}
 
 mod v2 {
@@ -119,9 +116,9 @@ mod v2 {
         F: FnMut(S) -> ListF<S>,
     {
         match coalgebra(seed) {
-            ListF::Cons(x, seed) => {
+            ListF::Cons(i, seed) => {
                 let nested = ana(seed, coalgebra);
-                List::Cons(x, Box::new(nested))
+                List::Cons(i, Box::new(nested))
             }
             ListF::Nil => List::Nil,
         }
@@ -235,6 +232,20 @@ mod v3 {
         List { items }
     }
 
+    /// anamorphism puts items in a vector
+    fn ana2<S, F>(mut seed: S, mut coalgebra: F) -> List
+    where
+        F: FnMut(S) -> ListF<S>,
+    {
+        let mut items = Vec::new();
+        while let ListF::Cons(v, s) = coalgebra(seed) {
+            items.push(ListF::Cons(v, Ix(items.len() + 1)));
+            seed = s;
+        }
+        items.push(ListF::Nil);
+        List { items }
+    }
+
     /// Catamorphism takes items from a vector. There's several ways to implement it, this method
     /// folds the whole structure from the end keeping the intermediate results in a vector.
     /// For linked list only a single element of the scratch vector will ever have a value but
@@ -329,9 +340,7 @@ mod v4 {
         fn fmap<B>(self, f: impl FnMut(A) -> B) -> Self::Target<B>;
     }
 
-    struct Ix(usize);
-
-    trait Rec: Sized {
+    trait Ana: Sized {
         fn ana<S, A>(seed: S, alg: A) -> Vec<<Self as Functor<S>>::Target<usize>>
         where
             A: Fn(S) -> Self,
@@ -349,7 +358,10 @@ mod v4 {
             }
             flat
         }
+    }
 
+    // doesn't work...
+    trait Cata: Sized {
         fn cata<R, A>(items: Vec<<Self as Functor<usize>>::Target<R>>, alg: A) -> R
         where
             A: Fn(<<Self as Functor<usize>>::Target<R> as Functor<usize>>::Target<R>) -> R,
@@ -370,6 +382,7 @@ mod v4 {
         Cons(usize, R),
         Nil,
     }
+
     impl<A> Functor<A> for ListF<A> {
         type Target<B> = ListF<B>;
 
@@ -404,7 +417,8 @@ mod v4 {
         }
     }
 
-    impl<R> Rec for ListF<R> {}
+    impl<R> Cata for ListF<R> {}
+    impl<R> Ana for ListF<R> {}
 
     #[test]
     fn still_works() {
@@ -414,6 +428,70 @@ mod v4 {
         let l = ListF::ana(9, unroll);
         assert_eq!(362880, ListF::cata(l, prod));
     }
+
+    /*
+    // Let's implement a merge sort algorithm that would use heap
+
+    #[derive(Debug, Clone)]
+    enum TreeF<R> {
+        Tip(Vec<usize>),
+        Node(R, R),
+    }
+    impl<R> Ana for TreeF<R> {}
+    impl<R> Cata for TreeF<R> {}
+
+    impl<A> Functor<A> for TreeF<A> {
+        type Target<B> = TreeF<B>;
+
+        fn fmap<B>(self, mut f: impl FnMut(A) -> B) -> Self::Target<B> {
+            match self {
+                TreeF::Tip(v) => TreeF::Tip(v),
+                TreeF::Node(l, r) => TreeF::Node(f(l), f(r)),
+            }
+        }
+    }
+
+    fn to_tree(mut xs: Vec<usize>) -> TreeF<Vec<usize>> {
+        if xs.len() <= 1 {
+            TreeF::Tip(xs)
+        } else {
+            let mid = xs.len() / 2;
+            let r = xs.split_off(mid);
+            TreeF::Node(xs, r)
+        }
+    }
+
+    fn merge_trees(tree: TreeF<Vec<usize>>) -> Vec<usize> {
+        match tree {
+            TreeF::Tip(xs) => xs,
+            TreeF::Node(l, r) => {
+                let mut merged = Vec::new();
+                let mut i = 0;
+                let mut j = 0;
+
+                while i < l.len() && j < r.len() {
+                    if l[i] <= r[j] {
+                        merged.push(l[i]);
+                        i += 1;
+                    } else {
+                        merged.push(r[j]);
+                        j += 1;
+                    }
+                }
+
+                merged.extend_from_slice(&l[i..]);
+                merged.extend_from_slice(&r[j..]);
+                merged
+            }
+        }
+    }
+
+    #[test]
+    fn asdf() {
+        let tree = TreeF::ana(vec![4, 3, 6, 3, 1, 6], to_tree);
+        //        let sorted = TreeF::cata(tree, merge_trees);
+        //        todo!("{:?}", sorted);
+    }*/
 } // }}}
 
 // lots more possibilities :)
